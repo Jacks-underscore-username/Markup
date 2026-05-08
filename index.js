@@ -11,14 +11,6 @@ let MONACO_BASE = './monaco-editor/vs'
  */
 export const setMonacoBase = path => (MONACO_BASE = path)
 
-/**
- * @param {import('./types.d.js').MarkupStr} rawMarkup
- * @param {number} [scale]
- * @param {string[]} [classes]
- * @returns {{ html: import('./types.d.js').HtmlStr, highlights: import('./types.d.js').MonacoHighlight[] }}
- */
-export const render = (rawMarkup, scale = 1, classes = []) => markup.translate(rawMarkup, scale, classes)
-
 /** @type {Promise<typeof monaco> | null} */
 let monacoReady = null
 
@@ -300,66 +292,75 @@ const mkBtn = label => {
   return b
 }
 
-export class MarkupEditor {
+export class MarkupWrapper {
+  /** @type {import('./types.d.js').EditorOptions} */
+  #options
+
   /** @type {import('./types.d.js').MarkupStr} */
-  _value
+  #value
 
   /** @type {monaco.editor.IStandaloneCodeEditor} */
   // @ts-expect-error
-  _monaco = null
+  #monaco = null
 
   /** @type {boolean} */
-  _scrollLock = false
+  #scrollLock = false
 
   /** @type {((src: import('./types.d.js').MarkupStr) => void)[]} */
-  _onChange = []
+  #onChange = []
 
-  /** @type {{ editor: HTMLButtonElement, split: HTMLButtonElement, preview: HTMLButtonElement }} */
-  // @ts-expect-error
-  _btns = null
+  /** @type {((src: import('./types.d.js').MarkupStr) => void)[]} */
+  #onDestroyed = []
 
-  /** @type {HTMLElement} */
+  /** @type {{ exit: HTMLButtonElement, editor: HTMLButtonElement, split: HTMLButtonElement, preview: HTMLButtonElement }} */
   // @ts-expect-error
-  _editorPane = null
-
-  /** @type {HTMLElement} */
-  // @ts-expect-error
-  _divider = null
+  #btns = {}
 
   /** @type {HTMLElement} */
   // @ts-expect-error
-  _preview = null
+  #editorPane = null
 
   /** @type {HTMLElement} */
   // @ts-expect-error
-  _panes = null
+  #divider = null
 
   /** @type {HTMLElement} */
   // @ts-expect-error
-  _statusErr = null
+  #preview = null
 
   /** @type {HTMLElement} */
   // @ts-expect-error
-  _statusInfo = null
+  #panes = null
 
   /** @type {HTMLElement} */
   // @ts-expect-error
-  _root = null
+  #statusErr = null
+
+  /** @type {HTMLElement} */
+  // @ts-expect-error
+  #statusInfo = null
+
+  /** @type {HTMLElement} */
+  // @ts-expect-error
+  #root = null
 
   /**
    * @param {HTMLElement} container
-   * @param {{ value?: import('./types.d.js').MarkupStr, onChange?: (src: import('./types.d.js').MarkupStr) => void }} [opts]
+   * @param {import('./types.d.js').EditorOptions} options
    */
-  constructor(container, opts = {}) {
-    this._value = asUniqueStr(opts.value ?? '', 'Markup')
-    if (opts.onChange) this._onChange.push(opts.onChange)
-    this._build(container)
-    loadMonaco().then(m => this._mount(m))
+  constructor(container, options) {
+    this.#options = options
+    this.#value = asUniqueStr(options.value ?? '', 'Markup')
+    this.#build(container)
+    loadMonaco().then(m => this.#mount(m))
   }
 
-  /** @param {HTMLElement} container */
-  _build = container => {
-    this._root = el('div', {
+  /**
+   * @param {HTMLElement} container
+   */
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: It is
+  #build = container => {
+    this.#root = el('div', {
       display: 'flex',
       flexDirection: 'column',
       width: '100%',
@@ -371,33 +372,51 @@ export class MarkupEditor {
       fontSize: '14px'
     })
 
-    const toolbar = el('div', {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '0 12px',
-      height: '36px',
-      background: '#2a2a2a',
-      borderBottom: '1px solid #555',
-      flexShrink: '0'
-    })
-    const title = el('span', { fontWeight: 'bold', fontStyle: 'italic', color: '#0f0' })
-    title.textContent = 'Markup Editor'
-    const btnRow = el('div', { display: 'flex', gap: '6px' })
-    this._btns = { editor: mkBtn('Editor'), split: mkBtn('Split'), preview: mkBtn('Preview') }
-    btnRow.append(this._btns.editor, this._btns.split, this._btns.preview)
-    toolbar.append(title, btnRow)
+    const useToolbar = this.#options.title !== undefined || this.#options.mode === 'edit' || !this.#options.locked
 
-    this._panes = el('div', { display: 'flex', flex: '1', minHeight: '0' })
-    this._editorPane = el('div', { flexBasis: '100%', flexShrink: '0', minWidth: '0', height: '100%' })
-    this._divider = el('div', {
-      width: '4px',
-      background: '#555',
-      cursor: 'col-resize',
-      flexShrink: '0',
-      display: 'none'
-    })
-    this._preview = el('div', {
+    if (useToolbar) {
+      const toolbar = el('div', {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 12px',
+        height: '36px',
+        background: '#2a2a2a',
+        borderBottom: '1px solid #555',
+        flexShrink: '0'
+      })
+
+      const title = el('span', { fontWeight: 'bold', fontStyle: 'italic', color: '#0f0' })
+      title.textContent = this.#options.title ?? ''
+      const btnRow = el('div', { display: 'flex', gap: '6px' })
+      if (!this.#options.locked) {
+        this.#btns.exit = mkBtn('Exit')
+        btnRow.append(this.#btns.exit)
+      }
+
+      if (this.#options.mode === 'edit') {
+        this.#btns.editor = mkBtn('Editor')
+        this.#btns.split = mkBtn('Split')
+        this.#btns.preview = mkBtn('Preview')
+        btnRow.append(this.#btns.editor, this.#btns.split, this.#btns.preview)
+      }
+      toolbar.append(title, btnRow)
+
+      this.#root.append(toolbar)
+    }
+
+    this.#panes = el('div', { display: 'flex', flex: '1', minHeight: '0' })
+    if (this.#options.mode === 'edit')
+      this.#editorPane = el('div', { flexBasis: '100%', flexShrink: '0', minWidth: '0', height: '100%' })
+    if (this.#options.mode === 'edit')
+      this.#divider = el('div', {
+        width: '4px',
+        background: '#555',
+        cursor: 'col-resize',
+        flexShrink: '0',
+        display: 'none'
+      })
+    this.#preview = el('div', {
       flexBasis: '50%',
       flexShrink: '0',
       minWidth: '0',
@@ -411,23 +430,27 @@ export class MarkupEditor {
       overflowY: 'auto',
       display: 'none'
     })
-    this._divider.addEventListener('mouseenter', () => {
-      this._divider.style.background = '#0f0'
-    })
-    this._divider.addEventListener('mouseleave', () => {
-      this._divider.style.background = '#555'
-    })
-    this._preview.addEventListener('scroll', () => {
-      if (this._scrollLock || !this._monaco) return
-      const total = this._preview.scrollHeight - this._preview.clientHeight
-      if (total <= 0) return
-      this._scrollLock = true
-      this._monaco.setScrollTop((this._preview.scrollTop / total) * this._monaco.getScrollHeight())
-      requestAnimationFrame(() => {
-        this._scrollLock = false
+    if (this.#options.mode === 'edit') {
+      this.#divider.addEventListener('mouseenter', () => {
+        this.#divider.style.background = '#0f0'
       })
-    })
-    this._panes.append(this._editorPane, this._divider, this._preview)
+      this.#divider.addEventListener('mouseleave', () => {
+        this.#divider.style.background = '#555'
+      })
+      this.#preview.addEventListener('scroll', () => {
+        if (this.#scrollLock || !this.#monaco) return
+        const total = this.#preview.scrollHeight - this.#preview.clientHeight
+        if (total <= 0) return
+        this.#scrollLock = true
+        this.#monaco.setScrollTop((this.#preview.scrollTop / total) * this.#monaco.getScrollHeight())
+        requestAnimationFrame(() => {
+          this.#scrollLock = false
+        })
+      })
+    }
+
+    if (this.#options.mode === 'edit') this.#panes.append(this.#editorPane, this.#divider)
+    this.#panes.append(this.#preview)
 
     const statusbar = el('div', {
       display: 'flex',
@@ -440,80 +463,96 @@ export class MarkupEditor {
       borderTop: '1px solid #555',
       flexShrink: '0'
     })
-    this._statusErr = el('span', { color: 'hsl(0,100%,50%)' })
-    this._statusInfo = el('span', { color: '#888' })
-    statusbar.append(this._statusErr, this._statusInfo)
+    this.#statusErr = el('span', { color: 'hsl(0,100%,50%)' })
+    this.#statusInfo = el('span', { color: '#888' })
+    statusbar.append(this.#statusErr, this.#statusInfo)
 
-    this._root.append(toolbar, this._panes, statusbar)
-    container.appendChild(this._root)
+    this.#root.append(this.#panes, statusbar)
+    container.appendChild(this.#root)
 
-    this._btns.editor.addEventListener('click', () => this.setMode('editor'))
-    this._btns.split.addEventListener('click', () => this.setMode('split'))
-    this._btns.preview.addEventListener('click', () => this.setMode('preview'))
-    this._setupDrag()
-  }
-
-  /** @param {typeof monaco} m */
-  _mount = m => {
-    this._monaco = m.editor.create(this._editorPane, {
-      value: this._value,
-      language: 'markup-lang',
-      theme: 'markup-dark',
-      fontSize: 14,
-      fontFamily: 'monospace',
-      minimap: { enabled: false },
-      wordWrap: 'on',
-      lineNumbers: 'on',
-      scrollBeyondLastLine: false,
-      renderLineHighlight: 'line',
-      automaticLayout: false
-    })
-    this._monaco.addCommand(monaco.KeyCode.Tab, () => {
-      const suggest = this._monaco.getContribution('editor.contrib.suggestController')
-      // @ts-expect-error
-      if (suggest?.model?.state !== 0) {
-        this._monaco.trigger('keyboard', 'acceptSelectedSuggestion', {})
-      } else {
-        this._monaco.trigger('keyboard', 'type', { text: '   ' })
-      }
-    })
-    this._monaco.onDidChangeModelContent(() => {
-      this._render()
-      for (const fn of this._onChange) fn(asUniqueStr(this.getValue(), 'Markup'))
-    })
-    this._monaco.onDidScrollChange(() => {
-      if (this._scrollLock) return
-      const total = this._monaco.getScrollHeight() - this._monaco.getLayoutInfo().height
-      if (total <= 0) return
-      this._scrollLock = true
-      const ratio = this._monaco.getScrollTop() / total
-      this._preview.scrollTop = ratio * (this._preview.scrollHeight - this._preview.clientHeight)
-      requestAnimationFrame(() => {
-        this._scrollLock = false
+    if (!this.#options.locked) {
+      this.#btns.exit.addEventListener('click', () => this.destroy())
+      document.addEventListener('keydown', event => {
+        if (event.code === 'Escape') this.destroy()
       })
-    })
-    this.setMode('editor')
-    this._render()
+    }
+
+    if (this.#options.mode === 'edit') {
+      this.#btns.editor.addEventListener('click', () => this.setMode('editor'))
+      this.#btns.split.addEventListener('click', () => this.setMode('split'))
+      this.#btns.preview.addEventListener('click', () => this.setMode('preview'))
+      this.#setupDrag()
+    }
   }
 
-  _render = () => {
-    this._statusErr.textContent = ''
+  /**
+   * @param {typeof monaco} m
+   */
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: It is
+  #mount = m => {
+    if (this.#options.mode === 'edit') {
+      this.#monaco = m.editor.create(this.#editorPane, {
+        value: this.#value,
+        language: 'markup-lang',
+        theme: 'markup-dark',
+        fontSize: 14,
+        fontFamily: 'monospace',
+        minimap: { enabled: false },
+        wordWrap: 'on',
+        lineNumbers: 'on',
+        scrollBeyondLastLine: false,
+        renderLineHighlight: 'line',
+        automaticLayout: false
+      })
+      this.#monaco.addCommand(monaco.KeyCode.Tab, () => {
+        const suggest = this.#monaco.getContribution('editor.contrib.suggestController')
+        // @ts-expect-error
+        if (suggest?.model?.state !== 0) {
+          this.#monaco.trigger('keyboard', 'acceptSelectedSuggestion', {})
+        } else {
+          this.#monaco.trigger('keyboard', 'type', { text: '   ' })
+        }
+      })
+      this.#monaco.onDidChangeModelContent(() => {
+        this.#render()
+        for (const fn of this.#onChange) fn(asUniqueStr(this.getValue(), 'Markup'))
+      })
+      this.#monaco.onDidScrollChange(() => {
+        if (this.#scrollLock) return
+        const total = this.#monaco.getScrollHeight() - this.#monaco.getLayoutInfo().height
+        if (total <= 0) return
+        this.#scrollLock = true
+        const ratio = this.#monaco.getScrollTop() / total
+        this.#preview.scrollTop = ratio * (this.#preview.scrollHeight - this.#preview.clientHeight)
+        requestAnimationFrame(() => {
+          this.#scrollLock = false
+        })
+      })
+    }
+    this.setMode(this.#options.mode === 'edit' ? 'split' : 'preview')
+    this.#render()
+  }
+
+  #render = () => {
+    this.#statusErr.textContent = ''
     try {
-      const src = asUniqueStr(this._monaco ? this._monaco.getValue() : this._value, 'Markup')
-      this._preview.innerHTML = markup.translate(src, 1, []).html
-      setupFolders(this._preview)
-      execScripts(this._preview)
+      const src = asUniqueStr(this.#monaco ? this.#monaco.getValue() : this.#value, 'Markup')
+      this.#preview.innerHTML = markup.translate(src, 1, []).html
+      setupFolders(this.#preview)
+      execScripts(this.#preview)
       const lines = src.split('\n').length
-      this._statusInfo.textContent = `${lines} line${lines !== 1 ? 's' : ''}`
+      this.#statusInfo.textContent = `${lines} line${lines !== 1 ? 's' : ''}`
     } catch (e) {
-      this._statusErr.textContent = e instanceof Error ? e.message : String(e)
-      this._statusInfo.textContent = ''
+      this.#statusErr.textContent = e instanceof Error ? e.message : String(e)
+      this.#statusInfo.textContent = ''
+      console.error(e instanceof Error ? e.message : String(e))
     }
   }
 
   /** @param {'editor' | 'split' | 'preview'} mode */
-  _setActiveBtn = mode => {
-    for (const [k, b] of Object.entries(this._btns)) {
+  #setActiveBtn = mode => {
+    if (!this.#btns) return
+    for (const [k, b] of Object.entries(this.#btns)) {
       const active = k === mode
       b.dataset['active'] = active ? 'true' : ''
       b.style.color = active ? '#0f0' : '#888'
@@ -522,9 +561,9 @@ export class MarkupEditor {
     }
   }
 
-  _setupDrag = () => {
+  #setupDrag = () => {
     let dragging = false
-    this._divider.addEventListener('mousedown', e => {
+    this.#divider.addEventListener('mousedown', e => {
       dragging = true
       document.body.style.cursor = 'col-resize'
       document.body.style.userSelect = 'none'
@@ -532,11 +571,11 @@ export class MarkupEditor {
     })
     document.addEventListener('mousemove', e => {
       if (!dragging) return
-      const rect = this._panes.getBoundingClientRect()
+      const rect = this.#panes.getBoundingClientRect()
       const pct = Math.min(80, Math.max(20, ((e.clientX - rect.left) / rect.width) * 100))
-      this._editorPane.style.flexBasis = `${pct}%`
-      this._preview.style.flexBasis = `${100 - pct - (4 / rect.width) * 100}%`
-      if (this._monaco) this._monaco.layout()
+      this.#editorPane.style.flexBasis = `${pct}%`
+      this.#preview.style.flexBasis = `${100 - pct - (4 / rect.width) * 100}%`
+      if (this.#monaco) this.#monaco.layout()
     })
     document.addEventListener('mouseup', () => {
       if (!dragging) return
@@ -548,66 +587,69 @@ export class MarkupEditor {
 
   /** @param {'editor' | 'split' | 'preview'} mode */
   setMode = mode => {
-    this._setActiveBtn(mode)
+    if (this.#options.mode === 'view' && mode !== 'preview')
+      throw new Error(`Cannot set the mode to ${mode} in a view only block`)
+    this.#setActiveBtn(mode)
     if (mode === 'editor') {
-      this._editorPane.style.display = ''
-      this._editorPane.style.flexBasis = '100%'
-      this._divider.style.display = 'none'
-      this._preview.style.display = 'none'
+      this.#editorPane.style.display = ''
+      this.#editorPane.style.flexBasis = '100%'
+      this.#divider.style.display = 'none'
+      this.#preview.style.display = 'none'
     } else if (mode === 'split') {
-      this._editorPane.style.display = ''
-      this._editorPane.style.flexBasis = '50%'
-      this._divider.style.display = ''
-      this._preview.style.display = ''
-      this._preview.style.flexBasis = '50%'
+      this.#editorPane.style.display = ''
+      this.#editorPane.style.flexBasis = '50%'
+      this.#divider.style.display = ''
+      this.#preview.style.display = ''
+      this.#preview.style.flexBasis = '50%'
     } else {
-      this._editorPane.style.display = 'none'
-      this._divider.style.display = 'none'
-      this._preview.style.display = ''
-      this._preview.style.flexBasis = '100%'
+      if (this.#editorPane) {
+        this.#editorPane.style.display = 'none'
+        this.#divider.style.display = 'none'
+      }
+      this.#preview.style.display = ''
+      this.#preview.style.flexBasis = '100%'
     }
-    if (this._monaco) requestAnimationFrame(() => this._monaco.layout())
-    this._render()
+    if (this.#monaco) requestAnimationFrame(() => this.#monaco.layout())
+    this.#render()
   }
 
   /** @returns {import('./types.d.js').MarkupStr} */
-  getValue = () => asUniqueStr(this._monaco ? this._monaco.getValue() : this._value, 'Markup')
+  getValue = () => asUniqueStr(this.#monaco ? this.#monaco.getValue() : this.#value, 'Markup')
 
   /** @param {import('./types.d.js').MarkupStr} src */
   setValue = src => {
-    this._value = src
-    if (this._monaco) this._monaco.setValue(src)
+    this.#value = src
+    if (this.#monaco) this.#monaco.setValue(src)
   }
 
-  /** @returns {{ value: import('./types.d.js').MarkupStr }} */
-  export = () => ({ value: this.getValue() })
-
   /**
-   * @param {'change'} event
+   * @param {'change' | 'destroyed'} event
    * @param {(src: import('./types.d.js').MarkupStr) => void} fn
    */
   on = (event, fn) => {
-    if (event === 'change') this._onChange.push(fn)
+    if (event === 'change') this.#onChange.push(fn)
+    if (event === 'destroyed') this.#onDestroyed.push(fn)
   }
 
   destroy = () => {
-    if (this._monaco) this._monaco.dispose()
-    this._root.remove()
+    for (const fn of this.#onDestroyed) fn(asUniqueStr(this.getValue(), 'Markup'))
+    if (this.#monaco) this.#monaco.dispose()
+    this.#root.remove()
   }
 }
 
 /**
  * @param {HTMLElement} container
- * @param {{ value?: import('./types.d.js').MarkupStr, onChange?: (src: import('./types.d.js').MarkupStr) => void }} [options]
- * @returns {MarkupEditor}
+ * @param {import('./types.d.js').EditorOptions} options
+ * @returns {MarkupWrapper}
  */
-export const createEditor = (container, options = {}) => new MarkupEditor(container, options)
+export const createBlock = (container, options) => new MarkupWrapper(container, options)
 
 /**
  * @param {HTMLElement} container
  * @param {{ value: import('./types.d.js').MarkupStr }} exportedData
- * @param {{ onChange?: (src: import('./types.d.js').MarkupStr) => void }} [options]
- * @returns {MarkupEditor}
+ * @param {import('./types.d.js').EditorOptions} options
+ * @returns {MarkupWrapper}
  */
-export const importEditor = (container, exportedData, options = {}) =>
-  new MarkupEditor(container, { ...options, value: exportedData.value ?? '' })
+export const importBlock = (container, exportedData, options) =>
+  new MarkupWrapper(container, { ...options, value: exportedData.value ?? '' })

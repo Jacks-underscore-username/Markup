@@ -34,3 +34,25 @@
  * @prop {boolean} underline
  * @prop {string} color
  */
+
+/**
+ * @typedef {Object} BaseEditorOptions
+ * @prop {string} [title]
+ * @prop {boolean} locked
+ */
+
+/**
+ * @typedef {Object} EditModeOptions
+ * @prop {'edit'} mode
+ * @prop {MarkupStr} [value]
+ *  */
+
+/**
+ * @typedef {Object} ViewModeOptions
+ * @prop {'view'} mode
+ * @prop {MarkupStr} value
+ */
+
+/**
+ * @typedef {BaseEditorOptions & (EditModeOptions | ViewModeOptions)} EditorOptions
+ */
