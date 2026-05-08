@@ -4,7 +4,12 @@
 import { asUniqueStr } from './baseTypes.d.js'
 import markup from './markup.js'
 
-const MONACO_BASE = './monaco-editor/vs'
+let MONACO_BASE = './monaco-editor/vs'
+
+/**
+ * @param {string} path
+ */
+export const setMonacoBase = path => (MONACO_BASE = path)
 
 /**
  * @param {import('./types.d.js').MarkupStr} rawMarkup
