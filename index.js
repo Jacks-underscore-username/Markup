@@ -64,6 +64,144 @@ const registerLanguage = () => {
       ]
     }
   })
+  monaco.languages.registerCompletionItemProvider('markup-lang', {
+    triggerCharacters: ['[', ' '],
+    provideCompletionItems(model, position) {
+      const line = model.getLineContent(position.lineNumber)
+      const col = position.column - 1
+
+      const textBefore = line.slice(0, col)
+      const tagStart = textBefore.lastIndexOf('|[')
+      if (tagStart === -1) return { suggestions: [] }
+
+      const afterTagStart = textBefore.slice(tagStart + 2)
+      if (afterTagStart.includes(']')) return { suggestions: [] }
+
+      const range = {
+        startLineNumber: position.lineNumber,
+        endLineNumber: position.lineNumber,
+        startColumn: position.column,
+        endColumn: position.column
+      }
+
+      const tokensBefore = afterTagStart.trim().split(/\s+/).filter(Boolean)
+      const lastToken = tokensBefore[tokensBefore.length - 1] ?? ''
+      const prevToken = tokensBefore[tokensBefore.length - 2]?.toLowerCase() ?? ''
+      const currentToken = lastToken
+      const atValue = afterTagStart.endsWith(' ') || afterTagStart.endsWith('\t')
+      const keywordBeforeValue = atValue ? (tokensBefore[tokensBefore.length - 1] ?? '').toLowerCase() : prevToken
+
+      /** @param {string[]} values @param {string} detail */
+      const valueItems = (values, detail) =>
+        values.map(v => ({
+          label: v,
+          kind: monaco.languages.CompletionItemKind.Value,
+          insertText: v,
+          detail,
+          range
+        }))
+
+      const keywords = [
+        'color',
+        'italic',
+        'bold',
+        'space',
+        'tab',
+        'break',
+        'size',
+        'code',
+        'align',
+        'reset',
+        'default',
+        'fold',
+        'image',
+        'video',
+        'strike',
+        'underline',
+        'link',
+        'script',
+        'showMarkup',
+        'COMMENT'
+      ]
+
+      const keywordDescriptions = {
+        color: 'Set text color',
+        italic: 'Toggle/set italic',
+        bold: 'Toggle/set bold',
+        space: 'Insert non-breaking spaces',
+        tab: 'Insert tab spaces',
+        break: 'Insert line break',
+        size: 'Set font size',
+        code: 'Toggle/set code style',
+        align: 'Set text alignment',
+        reset: 'Reset style property',
+        default: 'Set style as default',
+        fold: 'Create foldable section',
+        image: 'Embed an image',
+        video: 'Embed a video',
+        strike: 'Toggle/set strikethrough',
+        underline: 'Toggle/set underline',
+        link: 'Create a hyperlink',
+        script: 'Embed a script',
+        showMarkup: 'Show/hide markup tags',
+        COMMENT: 'Comment out this line'
+      }
+
+      const onOffToggle = ['on', 'off', 'true', 'false']
+
+      /** @type {Record<string, string[]>} */
+      const valueMap = {
+        italic: onOffToggle,
+        bold: onOffToggle,
+        code: onOffToggle,
+        strike: onOffToggle,
+        underline: onOffToggle,
+        showmarkup: onOffToggle,
+        align: ['left', 'center', 'right'],
+        size: ['xx-small', 'x-small', 'smaller', 'small', 'medium', 'large', 'larger', 'x-large', 'xx-large'],
+        fold: ['open', 'close'],
+        reset: ['color', 'italic', 'bold', 'size', 'code', 'align', 'strike', 'underline', 'showMarkup'],
+        default: ['global']
+      }
+
+      if (atValue && keywordBeforeValue && valueMap[keywordBeforeValue])
+        return { suggestions: valueItems(valueMap[keywordBeforeValue], `${keywordBeforeValue} value`) }
+
+      if (!atValue && tokensBefore.length >= 2) {
+        const kw = prevToken.toLowerCase()
+        if (valueMap[kw]) {
+          const partial = currentToken.toLowerCase()
+          const filtered = valueMap[kw].filter(v => v.toLowerCase().startsWith(partial))
+          const wordStart = col - currentToken.length + 1
+          return {
+            suggestions: filtered.map(v => ({
+              label: v,
+              kind: monaco.languages.CompletionItemKind.Value,
+              insertText: v,
+              detail: `${kw} value`,
+              range: { ...range, startColumn: wordStart }
+            }))
+          }
+        }
+      }
+
+      const partial = (atValue ? '' : currentToken).toLowerCase()
+      const wordStart = atValue ? col + 1 : col - currentToken.length + 1
+      return {
+        suggestions: keywords
+          .filter(k => k.toLowerCase().startsWith(partial))
+          .map(k => ({
+            label: k,
+            kind: monaco.languages.CompletionItemKind.Keyword,
+            insertText: k,
+            // @ts-expect-error
+            detail: keywordDescriptions[k] ?? '',
+            range: { ...range, startColumn: wordStart }
+          }))
+      }
+    }
+  })
+
   monaco.editor.defineTheme('markup-dark', {
     base: 'vs-dark',
     inherit: true,
@@ -330,7 +468,15 @@ export class MarkupEditor {
       renderLineHighlight: 'line',
       automaticLayout: false
     })
-    this._monaco.addCommand(monaco.KeyCode.Tab, () => this._monaco.trigger('keyboard', 'type', { text: '   ' }))
+    this._monaco.addCommand(monaco.KeyCode.Tab, () => {
+      const suggest = this._monaco.getContribution('editor.contrib.suggestController')
+      // @ts-expect-error
+      if (suggest?.model?.state !== 0) {
+        this._monaco.trigger('keyboard', 'acceptSelectedSuggestion', {})
+      } else {
+        this._monaco.trigger('keyboard', 'type', { text: '   ' })
+      }
+    })
     this._monaco.onDidChangeModelContent(() => {
       this._render()
       for (const fn of this._onChange) fn(asUniqueStr(this.getValue(), 'Markup'))
