@@ -1,0 +1,1 @@
+/persist/nixos/jsConfig.baseTypes.d.js
