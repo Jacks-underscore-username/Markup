@@ -303,7 +303,7 @@ function script() {
   })()
 }
 /**
- * @param {string} rawMarkup
+ * @param {import('./types.d.js').MarkupStr} rawMarkup
  */
 const splitMarkup = rawMarkup => {
   let temp
@@ -392,7 +392,7 @@ const exports = {
   },
   tabSize: 3,
   /**
-   * @param {string} rawMarkup
+   * @param {import('./types.d.js').MarkupStr} rawMarkup
    * @returns {string}
    */
   stripTags: rawMarkup =>
@@ -721,7 +721,6 @@ const exports = {
     const scriptStr = script.toString()
     const scriptString = scriptStr
       .slice(scriptStr.indexOf('{') + 1, scriptStr.lastIndexOf('}'))
-      // strip single-line comments safely (handles both \r\n and \n)
       .split(/\r?\n/)
       .map(line => line.replace(/\/\/.*$/, ''))
       .join('\n')

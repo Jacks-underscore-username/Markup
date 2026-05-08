@@ -20,8 +20,12 @@ Inside a fold.
   ),
   title: 'Demo markup editor',
   mode: 'edit',
-  locked: true
+  locked: false
 })
 
 block.on('change', value => console.log(`Block changed to value: ${value}`))
 block.on('destroyed', value => console.log(`Block destroyed with value: ${value}`))
+
+Markup.setAutocompleteProvider(type => {
+  return [`${type}A`, `${type}B`]
+})

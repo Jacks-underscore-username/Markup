@@ -11,6 +11,13 @@ let MONACO_BASE = './monaco-editor/vs'
  */
 export const setMonacoBase = path => (MONACO_BASE = path)
 
+/** @type {(type: 'video' | 'image' | 'script' | 'link') => string[]} */
+let autocompleteProvider = () => []
+/**
+ * @param {(type: 'video' | 'image' | 'script' | 'link') => string[]} provider
+ */
+export const setAutocompleteProvider = provider => (autocompleteProvider = provider)
+
 /** @type {Promise<typeof monaco> | null} */
 let monacoReady = null
 
@@ -143,6 +150,7 @@ const registerLanguage = () => {
 
       /** @type {Record<string, string[]>} */
       const valueMap = {
+        color: ['#'],
         italic: onOffToggle,
         bold: onOffToggle,
         code: onOffToggle,
@@ -153,7 +161,19 @@ const registerLanguage = () => {
         size: ['xx-small', 'x-small', 'smaller', 'small', 'medium', 'large', 'larger', 'x-large', 'xx-large'],
         fold: ['open', 'close'],
         reset: ['color', 'italic', 'bold', 'size', 'code', 'align', 'strike', 'underline', 'showMarkup'],
-        default: ['global']
+        default: ['global'],
+        get image() {
+          return autocompleteProvider('image')
+        },
+        get video() {
+          return autocompleteProvider('video')
+        },
+        get link() {
+          return autocompleteProvider('link')
+        },
+        get script() {
+          return autocompleteProvider('script')
+        }
       }
 
       if (atValue && keywordBeforeValue && valueMap[keywordBeforeValue])
