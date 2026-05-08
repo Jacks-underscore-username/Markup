@@ -1,3 +1,6 @@
+// @ts-expect-error
+/** @type {import('./monaco-editor/monaco.js')} */
+
 import { asUniqueStr } from './baseTypes.d.js'
 import markup from './markup.js'
 
